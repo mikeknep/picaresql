@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 postgres = "0.15"
 sqlparser = "0.4.0"
+structopt = "0.3.2"
