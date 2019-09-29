@@ -1,3 +1,9 @@
+use structopt::StructOpt;
+
+use juniper::Config;
+
 fn main() {
-    println!("Hello, world!");
+    let config = Config::from_args();
+
+    juniper::run(config);
 }
