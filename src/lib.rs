@@ -85,6 +85,7 @@ fn clause_steps_for_query(query: &Query) -> Vec<String> {
         builder_select.projection = vec![SelectItem::UnnamedExpr(Expr::Function(count))];
 
         builder_select.from = vec![];
+        builder_select.selection = None;
 
         for (index, from) in select.from.iter().enumerate() {
             let mut builder_from = from.clone();
@@ -100,6 +101,13 @@ fn clause_steps_for_query(query: &Query) -> Vec<String> {
                 clause_steps.push(builder_query.clone().to_string());
             }
         }
+
+        if let Some(selection) = &select.selection {
+            builder_select.selection = Some(selection.clone());
+            builder_query.body = SetExpr::Select(builder_select.clone());
+            clause_steps.push(builder_query.clone().to_string());
+        }
+
         clause_steps
     } else {
         vec![]
@@ -192,6 +200,22 @@ mod tests {
         let expected_clause_steps = vec![
             "SELECT COUNT(*) FROM table_1",
             "SELECT COUNT(*) FROM table_1, table_2",
+        ];
+
+        let query_analyses = analyze_queries(&sql);
+        let clause_steps = get_clause_steps(&query_analyses);
+
+        assert_eq!(expected_clause_steps, clause_steps);
+    }
+
+    #[test]
+    fn decomposes_from_with_join_and_where_to_counting_clause_steps() {
+        let sql = "SELECT * FROM table_1 JOIN table_2 ON true WHERE x = 1";
+
+        let expected_clause_steps = vec![
+            "SELECT COUNT(*) FROM table_1",
+            "SELECT COUNT(*) FROM table_1 JOIN table_2 ON true",
+            "SELECT COUNT(*) FROM table_1 JOIN table_2 ON true WHERE x = 1",
         ];
 
         let query_analyses = analyze_queries(&sql);
