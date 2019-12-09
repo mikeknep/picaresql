@@ -3,7 +3,7 @@ use std::io;
 use structopt::StructOpt;
 
 extern crate sqlparser;
-use sqlparser::ast::{Statement, Query, SetExpr, Function, ObjectName, Expr, SelectItem};
+use sqlparser::ast::{Statement, Query, SetExpr, Function, ObjectName, Expr, SelectItem, Select};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
@@ -67,22 +67,12 @@ fn analyze_query(query: &Query) -> QueryAnalysis {
 
 fn clause_steps_for_query(query: &Query) -> Vec<String> {
     if let SetExpr::Select(select) = &query.body {
-        /*
-         * The basic strategy here is to remove everything and rebuild it clause by clause.
-         */
         let mut clause_steps: Vec<String> = Vec::new();
 
         let mut builder_query = query.clone();
         let mut builder_select = select.clone();
 
-        let count = Function {
-            name: ObjectName(vec![String::from("COUNT")]),
-            args: vec![Expr::Wildcard],
-            over: None,
-            distinct: false,
-        };
-        builder_select.projection = vec![SelectItem::UnnamedExpr(Expr::Function(count))];
-
+        builder_select.projection = create_count_star_projection();
         builder_select.from = vec![];
         builder_select.selection = None;
         builder_select.group_by = vec![];
@@ -92,39 +82,49 @@ fn clause_steps_for_query(query: &Query) -> Vec<String> {
             let mut builder_from = from.clone();
             builder_from.joins = vec![];
             builder_select.from.push(builder_from.clone());
-            builder_query.body = SetExpr::Select(builder_select.clone());
-            clause_steps.push(builder_query.clone().to_string());
+            take_snapshot(&mut clause_steps, &mut builder_query, &builder_select);
 
             for join in from.joins.iter() {
                 builder_from.joins.push(join.clone());
                 builder_select.from[index] = builder_from.clone();
-                builder_query.body = SetExpr::Select(builder_select.clone());
-                clause_steps.push(builder_query.clone().to_string());
+                take_snapshot(&mut clause_steps, &mut builder_query, &builder_select);
             }
         }
 
         if let Some(selection) = &select.selection {
             builder_select.selection = Some(selection.clone());
-            builder_query.body = SetExpr::Select(builder_select.clone());
-            clause_steps.push(builder_query.clone().to_string());
+            take_snapshot(&mut clause_steps, &mut builder_query, &builder_select);
         }
 
         for group_by in select.group_by.iter() {
             builder_select.group_by.push(group_by.clone());
-            builder_query.body = SetExpr::Select(builder_select.clone());
-            clause_steps.push(builder_query.clone().to_string());
+            take_snapshot(&mut clause_steps, &mut builder_query, &builder_select);
         }
 
         if let Some(having) = &select.having {
             builder_select.having = Some(having.clone());
-            builder_query.body = SetExpr::Select(builder_select.clone());
-            clause_steps.push(builder_query.clone().to_string());
+            take_snapshot(&mut clause_steps, &mut builder_query, &builder_select);
         }
 
         clause_steps
     } else {
         vec![]
     }
+}
+
+fn create_count_star_projection() -> Vec<SelectItem> {
+    let count = Function {
+        name: ObjectName(vec![String::from("COUNT")]),
+        args: vec![Expr::Wildcard],
+        over: None,
+        distinct: false,
+    };
+    vec![SelectItem::UnnamedExpr(Expr::Function(count))]
+}
+
+fn take_snapshot(clause_steps: &mut Vec<String>, builder_query: &mut Query, builder_select: &Box<Select>) {
+    builder_query.body = SetExpr::Select(builder_select.clone());
+    clause_steps.push(builder_query.clone().to_string());
 }
 
 
