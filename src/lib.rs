@@ -138,7 +138,7 @@ mod tests {
     }
 
     fn get_clause_steps(query_analyses: &Vec<QueryAnalysis>) -> Vec<String> {
-        query_analyses.iter().flat_map(|qa| qa.clone().clause_steps).collect()
+        query_analyses.iter().flat_map(|qa| qa.clause_steps.clone()).collect()
     }
 
     #[test]
