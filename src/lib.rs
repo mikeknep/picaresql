@@ -3,7 +3,7 @@ use std::io;
 use structopt::StructOpt;
 
 extern crate sqlparser;
-use sqlparser::ast::{Statement, Query};
+use sqlparser::ast::{Statement, Query, SetExpr, Function, ObjectName, Expr, SelectItem};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
@@ -28,9 +28,10 @@ struct Analysis {
     pub query_analyses: Vec<QueryAnalysis>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct QueryAnalysis {
     pub query: String,
+    pub clause_steps: Vec<String>,
 }
 
 
@@ -58,7 +59,51 @@ fn analyze_queries(sql: &str) -> Vec<QueryAnalysis> {
 }
 
 fn analyze_query(query: &Query) -> QueryAnalysis {
-    QueryAnalysis { query: query.to_string() }
+    QueryAnalysis {
+        query: query.to_string(),
+        clause_steps: clause_steps_for_query(query),
+    }
+}
+
+fn clause_steps_for_query(query: &Query) -> Vec<String> {
+    if let SetExpr::Select(select) = &query.body {
+        /*
+         * The basic strategy here is to remove everything and rebuild it clause by clause.
+         * Not yet incorporating selection, group_by, or having clauses.
+         */
+        let mut clause_steps: Vec<String> = Vec::new();
+
+        let mut builder_query = query.clone();
+        let mut builder_select = select.clone();
+
+        let count = Function {
+            name: ObjectName(vec![String::from("COUNT")]),
+            args: vec![Expr::Wildcard],
+            over: None,
+            distinct: false,
+        };
+        builder_select.projection = vec![SelectItem::UnnamedExpr(Expr::Function(count))];
+
+        builder_select.from = vec![];
+
+        for (index, from) in select.from.iter().enumerate() {
+            let mut builder_from = from.clone();
+            builder_from.joins = vec![];
+            builder_select.from.push(builder_from.clone());
+            builder_query.body = SetExpr::Select(builder_select.clone());
+            clause_steps.push(builder_query.clone().to_string());
+
+            for join in from.joins.iter() {
+                builder_from.joins.push(join.clone());
+                builder_select.from[index] = builder_from.clone();
+                builder_query.body = SetExpr::Select(builder_select.clone());
+                clause_steps.push(builder_query.clone().to_string());
+            }
+        }
+        clause_steps
+    } else {
+        vec![]
+    }
 }
 
 
@@ -69,6 +114,10 @@ mod tests {
 
     fn get_queries(query_analyses: &Vec<QueryAnalysis>) -> Vec<String> {
         query_analyses.iter().map(|qa| qa.query.to_string()).collect()
+    }
+
+    fn get_clause_steps(query_analyses: &Vec<QueryAnalysis>) -> Vec<String> {
+        query_analyses.iter().flat_map(|qa| qa.clone().clause_steps).collect()
     }
 
     #[test]
@@ -103,5 +152,51 @@ mod tests {
         let query_analyses = analyze_queries(&sql);
 
         assert_eq!(0, query_analyses.len());
+    }
+
+    #[test]
+    fn decomposes_from_with_explicitly_joined_table_to_counting_clause_steps() {
+        let sql = "SELECT * FROM table_1 JOIN table_2 ON true";
+
+        let expected_clause_steps = vec![
+            "SELECT COUNT(*) FROM table_1",
+            "SELECT COUNT(*) FROM table_1 JOIN table_2 ON true",
+        ];
+
+        let query_analyses = analyze_queries(&sql);
+        let clause_steps = get_clause_steps(&query_analyses);
+
+        assert_eq!(expected_clause_steps, clause_steps);
+    }
+
+    #[test]
+    fn decomposes_from_with_multiple_explicitly_joined_tables_to_counting_clause_steps() {
+        let sql = "SELECT * FROM table_1 JOIN table_2 ON true LEFT JOIN table_3 ON table_3.x = table_2.x";
+
+        let expected_clause_steps = vec![
+            "SELECT COUNT(*) FROM table_1",
+            "SELECT COUNT(*) FROM table_1 JOIN table_2 ON true",
+            "SELECT COUNT(*) FROM table_1 JOIN table_2 ON true LEFT JOIN table_3 ON table_3.x = table_2.x",
+        ];
+
+        let query_analyses = analyze_queries(&sql);
+        let clause_steps = get_clause_steps(&query_analyses);
+
+        assert_eq!(expected_clause_steps, clause_steps);
+    }
+
+    #[test]
+    fn decomposes_from_with_comma_separated_table_to_counting_clause_steps() {
+        let sql = "SELECT * FROM table_1, table_2";
+
+        let expected_clause_steps = vec![
+            "SELECT COUNT(*) FROM table_1",
+            "SELECT COUNT(*) FROM table_1, table_2",
+        ];
+
+        let query_analyses = analyze_queries(&sql);
+        let clause_steps = get_clause_steps(&query_analyses);
+
+        assert_eq!(expected_clause_steps, clause_steps);
     }
 }
