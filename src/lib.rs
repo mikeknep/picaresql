@@ -86,6 +86,7 @@ fn clause_steps_for_query(query: &Query) -> Vec<String> {
 
         builder_select.from = vec![];
         builder_select.selection = None;
+        builder_select.group_by = vec![];
 
         for (index, from) in select.from.iter().enumerate() {
             let mut builder_from = from.clone();
@@ -104,6 +105,12 @@ fn clause_steps_for_query(query: &Query) -> Vec<String> {
 
         if let Some(selection) = &select.selection {
             builder_select.selection = Some(selection.clone());
+            builder_query.body = SetExpr::Select(builder_select.clone());
+            clause_steps.push(builder_query.clone().to_string());
+        }
+
+        for group_by in select.group_by.iter() {
+            builder_select.group_by.push(group_by.clone());
             builder_query.body = SetExpr::Select(builder_select.clone());
             clause_steps.push(builder_query.clone().to_string());
         }
@@ -216,6 +223,37 @@ mod tests {
             "SELECT COUNT(*) FROM table_1",
             "SELECT COUNT(*) FROM table_1 JOIN table_2 ON true",
             "SELECT COUNT(*) FROM table_1 JOIN table_2 ON true WHERE x = 1",
+        ];
+
+        let query_analyses = analyze_queries(&sql);
+        let clause_steps = get_clause_steps(&query_analyses);
+
+        assert_eq!(expected_clause_steps, clause_steps);
+    }
+
+    #[test]
+    fn decomposes_group_by_to_counting_clause_steps() {
+        let sql = "SELECT * FROM table_1 GROUP BY x";
+
+        let expected_clause_steps = vec![
+            "SELECT COUNT(*) FROM table_1",
+            "SELECT COUNT(*) FROM table_1 GROUP BY x",
+        ];
+
+        let query_analyses = analyze_queries(&sql);
+        let clause_steps = get_clause_steps(&query_analyses);
+
+        assert_eq!(expected_clause_steps, clause_steps);
+    }
+
+    #[test]
+    fn decomposes_multiple_group_bys_to_counting_clause_steps() {
+        let sql = "SELECT * FROM table_1 GROUP BY x, y";
+
+        let expected_clause_steps = vec![
+            "SELECT COUNT(*) FROM table_1",
+            "SELECT COUNT(*) FROM table_1 GROUP BY x",
+            "SELECT COUNT(*) FROM table_1 GROUP BY x, y",
         ];
 
         let query_analyses = analyze_queries(&sql);
