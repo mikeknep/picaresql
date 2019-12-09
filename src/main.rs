@@ -1,9 +1,9 @@
 use structopt::StructOpt;
 
-use juniper::Config;
+use picaresql::Config;
 
 fn main() {
     let config = Config::from_args();
 
-    juniper::run(config);
+    picaresql::run(config);
 }

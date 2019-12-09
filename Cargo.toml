@@ -1,5 +1,5 @@
 [package]
-name = "juniper"
+name = "picaresql"
 version = "0.1.0"
 authors = ["Mike Knepper <michaelrknepper@gmail.com>"]
 edition = "2018"

@@ -165,15 +165,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "juniper"
-version = "0.1.0"
-dependencies = [
- "postgres 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "sqlparser 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "structopt 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -234,6 +225,15 @@ version = "0.7.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "siphasher 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "picaresql"
+version = "0.1.0"
+dependencies = [
+ "postgres 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sqlparser 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "structopt 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

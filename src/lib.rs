@@ -3,7 +3,7 @@ use std::io;
 use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]
-#[structopt(name = "juniper", about = "Debug your SQL")]
+#[structopt(name = "picaresql", about = "Debug your SQL")]
 pub struct Config {
     #[structopt(long, help = "Should be in the form 'postgres://user:password@host:port/db_name'")]
     pub connection_string: String,
