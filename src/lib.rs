@@ -70,45 +70,27 @@ fn clause_steps_for_query(query: &Query) -> Vec<String> {
         let mut clause_steps: Vec<String> = Vec::new();
 
         let mut builder_query = query.clone();
-        let mut builder_select = select.clone();
+        let mut builder_select = create_empty_count_star_select();
 
-        builder_select.projection = create_count_star_projection();
-        builder_select.from = vec![];
-        builder_select.selection = None;
-        builder_select.group_by = vec![];
-        builder_select.having = None;
-
-        for (index, from) in select.from.iter().enumerate() {
-            let mut builder_from = from.clone();
-            builder_from.joins = vec![];
-            builder_select.from.push(builder_from.clone());
-            take_snapshot(&mut clause_steps, &mut builder_query, &builder_select);
-
-            for join in from.joins.iter() {
-                builder_from.joins.push(join.clone());
-                builder_select.from[index] = builder_from.clone();
-                take_snapshot(&mut clause_steps, &mut builder_query, &builder_select);
-            }
-        }
-
-        if let Some(selection) = &select.selection {
-            builder_select.selection = Some(selection.clone());
-            take_snapshot(&mut clause_steps, &mut builder_query, &builder_select);
-        }
-
-        for group_by in select.group_by.iter() {
-            builder_select.group_by.push(group_by.clone());
-            take_snapshot(&mut clause_steps, &mut builder_query, &builder_select);
-        }
-
-        if let Some(having) = &select.having {
-            builder_select.having = Some(having.clone());
-            take_snapshot(&mut clause_steps, &mut builder_query, &builder_select);
-        }
+        add_from_and_joins(&mut clause_steps, &mut builder_query, &mut builder_select, select);
+        add_selection(&mut clause_steps, &mut builder_query, &mut builder_select, select);
+        add_group_bys(&mut clause_steps, &mut builder_query, &mut builder_select, select);
+        add_having(&mut clause_steps, &mut builder_query, &mut builder_select, select);
 
         clause_steps
     } else {
         vec![]
+    }
+}
+
+fn create_empty_count_star_select() -> Select {
+    Select {
+        projection: create_count_star_projection(),
+        from: vec![],
+        selection: None,
+        group_by: vec![],
+        having: None,
+        distinct: false,
     }
 }
 
@@ -122,8 +104,44 @@ fn create_count_star_projection() -> Vec<SelectItem> {
     vec![SelectItem::UnnamedExpr(Expr::Function(count))]
 }
 
-fn take_snapshot(clause_steps: &mut Vec<String>, builder_query: &mut Query, builder_select: &Box<Select>) {
-    builder_query.body = SetExpr::Select(builder_select.clone());
+fn add_from_and_joins(clause_steps: &mut Vec<String>, builder_query: &mut Query, builder_select: &mut Select, source_select: &Box<Select>) {
+    for (index, from) in source_select.from.iter().enumerate() {
+        let mut builder_from = from.clone();
+        builder_from.joins = vec![];
+        builder_select.from.push(builder_from.clone());
+        take_snapshot(clause_steps, builder_query, builder_select);
+
+        for join in from.joins.iter() {
+            builder_from.joins.push(join.clone());
+            builder_select.from[index] = builder_from.clone();
+            take_snapshot(clause_steps, builder_query, builder_select);
+        }
+    }
+}
+
+fn add_selection(clause_steps: &mut Vec<String>, builder_query: &mut Query, builder_select: &mut Select, source_select: &Box<Select>) {
+    if let Some(selection) = &source_select.selection {
+        builder_select.selection = Some(selection.clone());
+        take_snapshot(clause_steps, builder_query, builder_select);
+    }
+}
+
+fn add_group_bys(clause_steps: &mut Vec<String>, builder_query: &mut Query, builder_select: &mut Select, source_select: &Box<Select>) {
+    for group_by in source_select.group_by.iter() {
+        builder_select.group_by.push(group_by.clone());
+        take_snapshot(clause_steps, builder_query, builder_select);
+    }
+}
+
+fn add_having(clause_steps: &mut Vec<String>, builder_query: &mut Query, builder_select: &mut Select, source_select: &Box<Select>) {
+    if let Some(having) = &source_select.having {
+        builder_select.having = Some(having.clone());
+        take_snapshot(clause_steps, builder_query, builder_select);
+    }
+}
+
+fn take_snapshot(clause_steps: &mut Vec<String>, builder_query: &mut Query, builder_select: &Select) {
+    builder_query.body = SetExpr::Select(Box::new(builder_select.clone()));
     clause_steps.push(builder_query.clone().to_string());
 }
 
