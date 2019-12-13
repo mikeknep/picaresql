@@ -3,7 +3,7 @@ use std::io;
 use structopt::StructOpt;
 
 extern crate sqlparser;
-use sqlparser::ast::{Statement, Query, SetExpr, Function, ObjectName, Expr, SelectItem, Select, TableWithJoins};
+use sqlparser::ast::{Statement, Query, SetExpr, Function, ObjectName, Expr, SelectItem, Select, TableWithJoins, Values};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
@@ -26,17 +26,24 @@ impl Config {
 #[derive(Debug)]
 struct Analysis {
     pub query_analyses: Vec<QueryAnalysis>,
+    pub insert_analyses: Vec<InsertAnalysis>,
 }
 
 impl Analysis {
     fn new() -> Analysis {
         Analysis {
             query_analyses: vec![],
+            insert_analyses: vec![],
         }
     }
 
     fn add_query_analysis(mut self, query_analysis: QueryAnalysis) -> Analysis {
         self.query_analyses.push(query_analysis);
+        self
+    }
+
+    fn add_insert_analysis(mut self, insert_analysis: InsertAnalysis) -> Analysis {
+        self.insert_analyses.push(insert_analysis);
         self
     }
 }
@@ -45,6 +52,13 @@ impl Analysis {
 struct QueryAnalysis {
     pub query: String,
     pub clause_steps: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct InsertAnalysis {
+    pub insert_statement: String,
+    pub target_table_initial_count: String,
+    pub payload_count: String,
 }
 
 
@@ -59,6 +73,7 @@ fn analyze(sql: &str) -> Analysis {
     ast.iter().fold(Analysis::new(), |analysis, statement| {
         match statement {
             Statement::Query(q) => analysis.add_query_analysis(analyze_query(q)),
+            Statement::Insert { table_name, columns: _, source } => analysis.add_insert_analysis(analyze_insert(table_name, source, statement)),
             _ => analysis
         }
     })
@@ -67,6 +82,34 @@ fn analyze(sql: &str) -> Analysis {
 fn get_ast_for_sql(sql: &str) -> Vec<Statement> {
     let dialect = GenericDialect {};
     Parser::parse_sql(&dialect, sql.to_string()).unwrap()
+}
+
+fn analyze_insert(table_name: &ObjectName, source: &Query, full_statement: &Statement) -> InsertAnalysis {
+    let target_table_initial_count = format!("SELECT COUNT(*) FROM {}", table_name);
+    let payload_count = get_payload_count_query(source);
+
+    InsertAnalysis {
+        insert_statement: full_statement.to_string(),
+        target_table_initial_count,
+        payload_count,
+    }
+}
+
+fn get_payload_count_query(query: &Query) -> String {
+    match &query.body {
+        SetExpr::Select(select) => transform_select_projection_to_count(*select.clone()),
+        SetExpr::Values(values) => get_values_count_query(values),
+        _ => panic!("What are you trying to INSERT if not a SELECT or VALUES?")
+    }
+}
+
+fn transform_select_projection_to_count(mut select: Select) -> String {
+    select.projection = create_count_star_projection();
+    select.to_string()
+}
+
+fn get_values_count_query(values: &Values) -> String {
+    format!("SELECT {}", values.0.len())
 }
 
 fn analyze_query(query: &Query) -> QueryAnalysis {
@@ -321,5 +364,41 @@ mod tests {
         let clause_steps = get_clause_steps(&analysis);
 
         assert_eq!(expected_clause_steps, clause_steps);
+    }
+
+    #[test]
+    fn checks_the_count_of_the_target_table_of_an_insert_statement() {
+        let sql = "INSERT INTO table_1 SELECT * FROM table_2";
+
+        let expected_target_table_initial_count_queries = vec!["SELECT COUNT(*) FROM table_1"];
+
+        let analysis = analyze(&sql);
+        let target_table_initial_count_queries: Vec<String> = analysis.insert_analyses.iter().map(|ia| ia.target_table_initial_count.to_string()).collect();
+
+        assert_eq!(expected_target_table_initial_count_queries, target_table_initial_count_queries)
+    }
+
+    #[test]
+    fn checks_the_count_of_the_payload_of_an_insert_statement_using_select() {
+        let sql = "INSERT INTO table_1 SELECT * FROM table_2";
+
+        let expected_payload_count_queries = vec!["SELECT COUNT(*) FROM table_2"];
+
+        let analysis = analyze(&sql);
+        let payload_count_queries: Vec<String> = analysis.insert_analyses.iter().map(|ia| ia.payload_count.to_string()).collect();
+
+        assert_eq!(expected_payload_count_queries, payload_count_queries)
+    }
+
+    #[test]
+    fn checks_the_count_of_the_payload_of_an_insert_statement_using_values() {
+        let sql = "INSERT INTO table_1 (a) VALUES (1), (2)";
+
+        let expected_payload_count_queries = vec!["SELECT 2"];
+
+        let analysis = analyze(&sql);
+        let payload_count_queries: Vec<String> = analysis.insert_analyses.iter().map(|ia| ia.payload_count.to_string()).collect();
+
+        assert_eq!(expected_payload_count_queries, payload_count_queries)
     }
 }
