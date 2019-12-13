@@ -28,6 +28,19 @@ struct Analysis {
     pub query_analyses: Vec<QueryAnalysis>,
 }
 
+impl Analysis {
+    fn new() -> Analysis {
+        Analysis {
+            query_analyses: vec![],
+        }
+    }
+
+    fn add_query_analysis(mut self, query_analysis: QueryAnalysis) -> Analysis {
+        self.query_analyses.push(query_analysis);
+        self
+    }
+}
+
 #[derive(Debug, Clone)]
 struct QueryAnalysis {
     pub query: String,
@@ -42,20 +55,18 @@ pub fn run(config: Config) {
 }
 
 fn analyze(sql: &str) -> Analysis {
-    let query_analyses = analyze_queries(&sql);
-    Analysis { query_analyses }
+    let ast = get_ast_for_sql(sql);
+    ast.iter().fold(Analysis::new(), |analysis, statement| {
+        match statement {
+            Statement::Query(q) => analysis.add_query_analysis(analyze_query(q)),
+            _ => analysis
+        }
+    })
 }
 
-fn analyze_queries(sql: &str) -> Vec<QueryAnalysis> {
+fn get_ast_for_sql(sql: &str) -> Vec<Statement> {
     let dialect = GenericDialect {};
-    let ast = Parser::parse_sql(&dialect, sql.to_string()).unwrap();
-
-    ast.iter().filter_map(|statement| {
-        match statement {
-            Statement::Query(q) => Some(analyze_query(q)),
-            _ => None
-        }
-    }).collect()
+    Parser::parse_sql(&dialect, sql.to_string()).unwrap()
 }
 
 fn analyze_query(query: &Query) -> QueryAnalysis {
@@ -161,20 +172,20 @@ fn build_query_with_body(select: &Select) -> Query {
 mod tests {
     use super::*;
 
-    fn get_queries(query_analyses: &Vec<QueryAnalysis>) -> Vec<String> {
-        query_analyses.iter().map(|qa| qa.query.to_string()).collect()
+    fn get_queries(analysis: &Analysis) -> Vec<String> {
+        analysis.query_analyses.iter().map(|qa| qa.query.to_string()).collect()
     }
 
-    fn get_clause_steps(query_analyses: &Vec<QueryAnalysis>) -> Vec<String> {
-        query_analyses.iter().flat_map(|qa| qa.clause_steps.clone()).collect()
+    fn get_clause_steps(analysis: &Analysis) -> Vec<String> {
+        analysis.query_analyses.iter().flat_map(|qa| qa.clause_steps.clone()).collect()
     }
 
     #[test]
     fn creates_one_query_analysis_for_simple_query() {
         let sql = "SELECT * FROM table_1";
 
-        let query_analyses = analyze_queries(&sql);
-        let queries = get_queries(&query_analyses);
+        let analysis = analyze(&sql);
+        let queries = get_queries(&analysis);
 
         assert_eq!(vec![sql], queries);
     }
@@ -188,8 +199,8 @@ mod tests {
             "SELECT * FROM table_2",
         ];
 
-        let query_analyses = analyze_queries(&sql);
-        let queries = get_queries(&query_analyses);
+        let analysis = analyze(&sql);
+        let queries = get_queries(&analysis);
 
         assert_eq!(expected_queries, queries);
     }
@@ -198,9 +209,9 @@ mod tests {
     fn does_not_treat_non_query_statements_as_queries() {
         let sql = "DROP TABLE table_1";
 
-        let query_analyses = analyze_queries(&sql);
+        let analysis = analyze(&sql);
 
-        assert_eq!(0, query_analyses.len());
+        assert_eq!(0, analysis.query_analyses.len());
     }
 
     #[test]
@@ -212,8 +223,8 @@ mod tests {
             "SELECT COUNT(*) FROM table_1 JOIN table_2 ON true",
         ];
 
-        let query_analyses = analyze_queries(&sql);
-        let clause_steps = get_clause_steps(&query_analyses);
+        let analysis = analyze(&sql);
+        let clause_steps = get_clause_steps(&analysis);
 
         assert_eq!(expected_clause_steps, clause_steps);
     }
@@ -228,8 +239,8 @@ mod tests {
             "SELECT COUNT(*) FROM table_1 JOIN table_2 ON true LEFT JOIN table_3 ON table_3.x = table_2.x",
         ];
 
-        let query_analyses = analyze_queries(&sql);
-        let clause_steps = get_clause_steps(&query_analyses);
+        let analysis = analyze(&sql);
+        let clause_steps = get_clause_steps(&analysis);
 
         assert_eq!(expected_clause_steps, clause_steps);
     }
@@ -243,8 +254,8 @@ mod tests {
             "SELECT COUNT(*) FROM table_1, table_2",
         ];
 
-        let query_analyses = analyze_queries(&sql);
-        let clause_steps = get_clause_steps(&query_analyses);
+        let analysis = analyze(&sql);
+        let clause_steps = get_clause_steps(&analysis);
 
         assert_eq!(expected_clause_steps, clause_steps);
     }
@@ -259,8 +270,8 @@ mod tests {
             "SELECT COUNT(*) FROM table_1 JOIN table_2 ON true WHERE x = 1",
         ];
 
-        let query_analyses = analyze_queries(&sql);
-        let clause_steps = get_clause_steps(&query_analyses);
+        let analysis = analyze(&sql);
+        let clause_steps = get_clause_steps(&analysis);
 
         assert_eq!(expected_clause_steps, clause_steps);
     }
@@ -274,8 +285,8 @@ mod tests {
             "SELECT COUNT(*) FROM table_1 GROUP BY x",
         ];
 
-        let query_analyses = analyze_queries(&sql);
-        let clause_steps = get_clause_steps(&query_analyses);
+        let analysis = analyze(&sql);
+        let clause_steps = get_clause_steps(&analysis);
 
         assert_eq!(expected_clause_steps, clause_steps);
     }
@@ -290,8 +301,8 @@ mod tests {
             "SELECT COUNT(*) FROM table_1 GROUP BY x, y",
         ];
 
-        let query_analyses = analyze_queries(&sql);
-        let clause_steps = get_clause_steps(&query_analyses);
+        let analysis = analyze(&sql);
+        let clause_steps = get_clause_steps(&analysis);
 
         assert_eq!(expected_clause_steps, clause_steps);
     }
@@ -306,8 +317,8 @@ mod tests {
             "SELECT COUNT(*) FROM table_1 GROUP BY x HAVING COUNT(*) > 1",
         ];
 
-        let query_analyses = analyze_queries(&sql);
-        let clause_steps = get_clause_steps(&query_analyses);
+        let analysis = analyze(&sql);
+        let clause_steps = get_clause_steps(&analysis);
 
         assert_eq!(expected_clause_steps, clause_steps);
     }
