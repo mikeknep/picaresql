@@ -368,6 +368,40 @@ mod tests {
     }
 
     #[test]
+    fn decomposes_cte_to_counting_clause_steps() {
+        let sql = "WITH a AS (SELECT * FROM table_1 JOIN table_2 ON true) SELECT * FROM a";
+
+        let expected_clause_steps = vec![
+            "SELECT COUNT(*) FROM table_1",
+            "SELECT COUNT(*) FROM table_1 JOIN table_2 ON true",
+            "WITH a AS (SELECT * FROM table_1 JOIN table_2 ON true) SELECT COUNT(*) FROM a",
+        ];
+
+        let analysis = analyze(&sql);
+        let clause_steps = get_clause_steps(&analysis);
+
+        assert_eq!(expected_clause_steps, clause_steps);
+    }
+
+    #[test]
+    fn decomposes_multiple_ctes_to_counting_clause_steps() {
+        let sql = "WITH a AS (SELECT * FROM table_1 JOIN table_2 ON true), b AS (SELECT * FROM table_3 JOIN a ON true) SELECT * FROM b";
+
+        let expected_clause_steps = vec![
+            "SELECT COUNT(*) FROM table_1",
+            "SELECT COUNT(*) FROM table_1 JOIN table_2 ON true",
+            "WITH a AS (SELECT * FROM table_1 JOIN table_2 ON true) SELECT COUNT(*) FROM table_3",
+            "WITH a AS (SELECT * FROM table_1 JOIN table_2 ON true) SELECT COUNT(*) FROM table_3 JOIN a ON true",
+            "WITH a AS (SELECT * FROM table_1 JOIN table_2 ON true), b AS (SELECT * FROM table_3 JOIN a ON true) SELECT COUNT(*) FROM b",
+        ];
+
+        let analysis = analyze(&sql);
+        let clause_steps = get_clause_steps(&analysis);
+
+        assert_eq!(expected_clause_steps, clause_steps);
+    }
+
+    #[test]
     fn checks_the_count_of_the_target_table_of_an_insert_statement() {
         let sql = "INSERT INTO table_1 SELECT * FROM table_2";
 
