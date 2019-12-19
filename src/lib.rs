@@ -69,13 +69,12 @@ fn clause_steps_for_query(query: &Query) -> Vec<String> {
     if let SetExpr::Select(select) = &query.body {
         let mut clause_steps: Vec<String> = Vec::new();
 
-        let mut builder_query = query.clone();
         let mut builder_select = create_empty_count_star_select();
 
-        add_from_and_joins(&mut clause_steps, &mut builder_query, &mut builder_select, select);
-        add_selection(&mut clause_steps, &mut builder_query, &mut builder_select, select);
-        add_group_bys(&mut clause_steps, &mut builder_query, &mut builder_select, select);
-        add_having(&mut clause_steps, &mut builder_query, &mut builder_select, select);
+        add_from_and_joins(&mut clause_steps, &mut builder_select, select);
+        add_selection(&mut clause_steps, &mut builder_select, select);
+        add_group_bys(&mut clause_steps, &mut builder_select, select);
+        add_having(&mut clause_steps, &mut builder_select, select);
 
         clause_steps
     } else {
@@ -104,47 +103,57 @@ fn create_count_star_projection() -> Vec<SelectItem> {
     vec![SelectItem::UnnamedExpr(Expr::Function(count))]
 }
 
-fn add_from_and_joins(clause_steps: &mut Vec<String>, builder_query: &mut Query, builder_select: &mut Select, source_select: &Box<Select>) {
+fn add_from_and_joins(clause_steps: &mut Vec<String>, builder_select: &mut Select, source_select: &Box<Select>) {
     for (index, from) in source_select.from.iter().enumerate() {
         let mut builder_from = from.clone();
         builder_from.joins = vec![];
         builder_select.from.push(builder_from.clone());
-        take_snapshot(clause_steps, builder_query, builder_select);
+        take_snapshot(clause_steps, builder_select);
 
         for join in from.joins.iter() {
             builder_from.joins.push(join.clone());
             builder_select.from[index] = builder_from.clone();
-            take_snapshot(clause_steps, builder_query, builder_select);
+            take_snapshot(clause_steps, builder_select);
         }
     }
 }
 
-fn add_selection(clause_steps: &mut Vec<String>, builder_query: &mut Query, builder_select: &mut Select, source_select: &Box<Select>) {
+fn add_selection(clause_steps: &mut Vec<String>, builder_select: &mut Select, source_select: &Box<Select>) {
     if let Some(selection) = &source_select.selection {
         builder_select.selection = Some(selection.clone());
-        take_snapshot(clause_steps, builder_query, builder_select);
+        take_snapshot(clause_steps, builder_select);
     }
 }
 
-fn add_group_bys(clause_steps: &mut Vec<String>, builder_query: &mut Query, builder_select: &mut Select, source_select: &Box<Select>) {
+fn add_group_bys(clause_steps: &mut Vec<String>, builder_select: &mut Select, source_select: &Box<Select>) {
     for group_by in source_select.group_by.iter() {
         builder_select.group_by.push(group_by.clone());
-        take_snapshot(clause_steps, builder_query, builder_select);
+        take_snapshot(clause_steps, builder_select);
     }
 }
 
-fn add_having(clause_steps: &mut Vec<String>, builder_query: &mut Query, builder_select: &mut Select, source_select: &Box<Select>) {
+fn add_having(clause_steps: &mut Vec<String>, builder_select: &mut Select, source_select: &Box<Select>) {
     if let Some(having) = &source_select.having {
         builder_select.having = Some(having.clone());
-        take_snapshot(clause_steps, builder_query, builder_select);
+        take_snapshot(clause_steps, builder_select);
     }
 }
 
-fn take_snapshot(clause_steps: &mut Vec<String>, builder_query: &mut Query, builder_select: &Select) {
-    builder_query.body = SetExpr::Select(Box::new(builder_select.clone()));
-    clause_steps.push(builder_query.clone().to_string());
+fn take_snapshot(clause_steps: &mut Vec<String>, builder_select: &Select) {
+    let query = build_query_with_body(builder_select);
+    clause_steps.push(query.to_string());
 }
 
+fn build_query_with_body(select: &Select) -> Query {
+    Query {
+        ctes: vec![],
+        body: SetExpr::Select(Box::new(select.clone())),
+        order_by: vec![],
+        limit: None,
+        offset: None,
+        fetch: None,
+    }
+}
 
 
 #[cfg(test)]
