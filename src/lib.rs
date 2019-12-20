@@ -66,20 +66,16 @@ fn analyze_query(query: &Query) -> QueryAnalysis {
 }
 
 fn clause_steps_for_query(query: &Query) -> Vec<String> {
+    let mut steps = vec![];
     if let SetExpr::Select(select) = &query.body {
-        let mut clause_steps: Vec<String> = Vec::new();
-
         let mut builder_select = create_empty_count_star_select();
 
-        add_from_and_joins(&mut clause_steps, &mut builder_select, select);
-        add_selection(&mut clause_steps, &mut builder_select, select);
-        add_group_bys(&mut clause_steps, &mut builder_select, select);
-        add_having(&mut clause_steps, &mut builder_select, select);
-
-        clause_steps
-    } else {
-        vec![]
+        steps.extend(add_from_and_joins(&mut builder_select, select));
+        steps.extend(add_selection(&mut builder_select, select));
+        steps.extend(add_group_bys(&mut builder_select, select));
+        steps.extend(add_having(&mut builder_select, select));
     }
+    steps
 }
 
 fn create_empty_count_star_select() -> Select {
@@ -103,45 +99,51 @@ fn create_count_star_projection() -> Vec<SelectItem> {
     vec![SelectItem::UnnamedExpr(Expr::Function(count))]
 }
 
-fn add_from_and_joins(clause_steps: &mut Vec<String>, builder_select: &mut Select, source_select: &Box<Select>) {
+fn add_from_and_joins(builder_select: &mut Select, source_select: &Box<Select>) -> Vec<String> {
+    let mut clause_steps = vec![];
     for (index, from) in source_select.from.iter().enumerate() {
         let mut builder_from = from.clone();
         builder_from.joins = vec![];
         builder_select.from.push(builder_from.clone());
-        take_snapshot(clause_steps, builder_select);
+        clause_steps.append(&mut take_snapshot(builder_select));
 
         for join in from.joins.iter() {
             builder_from.joins.push(join.clone());
             builder_select.from[index] = builder_from.clone();
-            take_snapshot(clause_steps, builder_select);
+            clause_steps.append(&mut take_snapshot(builder_select));
         }
     }
+    clause_steps
 }
 
-fn add_selection(clause_steps: &mut Vec<String>, builder_select: &mut Select, source_select: &Box<Select>) {
+fn add_selection(builder_select: &mut Select, source_select: &Box<Select>) -> Vec<String> {
     if let Some(selection) = &source_select.selection {
         builder_select.selection = Some(selection.clone());
-        take_snapshot(clause_steps, builder_select);
+        take_snapshot(builder_select)
+    } else {
+        vec![]
     }
 }
 
-fn add_group_bys(clause_steps: &mut Vec<String>, builder_select: &mut Select, source_select: &Box<Select>) {
-    for group_by in source_select.group_by.iter() {
+fn add_group_bys(builder_select: &mut Select, source_select: &Box<Select>) -> Vec<String> {
+    source_select.group_by.iter().flat_map(|group_by| {
         builder_select.group_by.push(group_by.clone());
-        take_snapshot(clause_steps, builder_select);
-    }
+        take_snapshot(builder_select)
+    }).collect()
 }
 
-fn add_having(clause_steps: &mut Vec<String>, builder_select: &mut Select, source_select: &Box<Select>) {
+fn add_having(builder_select: &mut Select, source_select: &Box<Select>) -> Vec<String> {
     if let Some(having) = &source_select.having {
         builder_select.having = Some(having.clone());
-        take_snapshot(clause_steps, builder_select);
+        take_snapshot(builder_select)
+    } else {
+        vec![]
     }
 }
 
-fn take_snapshot(clause_steps: &mut Vec<String>, builder_select: &Select) {
+fn take_snapshot(builder_select: &Select) -> Vec<String> {
     let query = build_query_with_body(builder_select);
-    clause_steps.push(query.to_string());
+    vec![query.to_string()]
 }
 
 fn build_query_with_body(select: &Select) -> Query {
