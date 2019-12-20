@@ -3,7 +3,7 @@ use std::io;
 use structopt::StructOpt;
 
 extern crate sqlparser;
-use sqlparser::ast::{Statement, Query, SetExpr, Function, ObjectName, Expr, SelectItem, Select, TableWithJoins, Values};
+use sqlparser::ast::{Statement, Query, SetExpr, Function, ObjectName, Expr, SelectItem, Select, TableWithJoins, Values, Cte};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
@@ -116,19 +116,53 @@ fn get_values_count_query(values: &Values) -> String {
 fn analyze_query(query: &Query) -> QueryAnalysis {
     QueryAnalysis {
         query: query.to_string(),
-        clause_steps: clause_steps_for_query(query),
+        clause_steps: get_all_clause_steps(query),
     }
 }
 
+struct ClauseStepsBuilder {
+    ctes: Vec<Cte>,
+    steps: Vec<String>,
+}
+
+impl ClauseStepsBuilder {
+    fn new() -> ClauseStepsBuilder {
+        ClauseStepsBuilder { ctes: vec![], steps: vec![] }
+    }
+
+    fn apply(mut self, cte: &Cte) -> ClauseStepsBuilder {
+        self.steps.append(&mut clause_steps_for_query(&query_with_ctes(&cte.query, &self.ctes)));
+        self.ctes.push(cte.clone());
+        self
+    }
+}
+
+fn query_with_ctes(query: &Query, ctes: &[Cte]) -> Query {
+    let mut with_ctes = query.clone();
+    with_ctes.ctes = ctes.to_vec();
+    with_ctes
+}
+
+fn get_all_clause_steps(query: &Query) -> Vec<String> {
+    let cte_steps = query.ctes.iter().fold(ClauseStepsBuilder::new(), |builder, cte| builder.apply(cte)).steps;
+    let main_steps = clause_steps_for_query(query);
+
+    let mut all = vec![];
+    all.extend(cte_steps);
+    all.extend(main_steps);
+    all
+}
+
 fn clause_steps_for_query(query: &Query) -> Vec<String> {
+    let ctes = &query.ctes;
     let mut steps = vec![];
     if let SetExpr::Select(select) = &query.body {
         let mut builder_select = create_empty_count_star_select();
 
-        steps.extend(add_from_and_joins(&mut builder_select, select));
-        steps.extend(add_selection(&mut builder_select, select));
-        steps.extend(add_group_bys(&mut builder_select, select));
-        steps.extend(add_having(&mut builder_select, select));
+        steps.extend(add_from_and_joins(&mut builder_select, select, ctes));
+        steps.extend(add_selection(&mut builder_select, select, ctes));
+        steps.extend(add_group_bys(&mut builder_select, select, ctes));
+        steps.extend(add_having(&mut builder_select, select, ctes));
     }
     steps
 }
@@ -154,55 +188,55 @@ fn create_count_star_projection() -> Vec<SelectItem> {
     vec![SelectItem::UnnamedExpr(Expr::Function(count))]
 }
 
-fn add_from_and_joins(builder_select: &mut Select, source_select: &Select) -> Vec<String> {
+fn add_from_and_joins(builder_select: &mut Select, source_select: &Select, ctes: &[Cte]) -> Vec<String> {
     let mut clause_steps = vec![];
     for (index, from) in source_select.from.iter().enumerate() {
         let mut builder_from = TableWithJoins { relation: from.relation.clone(), joins: vec![] };
         builder_select.from.push(builder_from.clone());
-        clause_steps.extend(query_string_from_select(builder_select));
+        clause_steps.extend(query_string_from_select(builder_select, ctes));
 
         for join in from.joins.iter() {
             builder_from.joins.push(join.clone());
             builder_select.from[index] = builder_from.clone();
-            clause_steps.extend(query_string_from_select(builder_select));
+            clause_steps.extend(query_string_from_select(builder_select, ctes));
         }
     }
     clause_steps
 }
 
-fn add_selection(builder_select: &mut Select, source_select: &Select) -> Vec<String> {
+fn add_selection(builder_select: &mut Select, source_select: &Select, ctes: &[Cte]) -> Vec<String> {
     if let Some(selection) = &source_select.selection {
         builder_select.selection = Some(selection.clone());
-        query_string_from_select(builder_select)
+        query_string_from_select(builder_select, ctes)
     } else {
         vec![]
     }
 }
 
-fn add_group_bys(builder_select: &mut Select, source_select: &Select) -> Vec<String> {
+fn add_group_bys(builder_select: &mut Select, source_select: &Select, ctes: &[Cte]) -> Vec<String> {
     source_select.group_by.iter().flat_map(|group_by| {
         builder_select.group_by.push(group_by.clone());
-        query_string_from_select(builder_select)
+        query_string_from_select(builder_select, ctes)
     }).collect()
 }
 
-fn add_having(builder_select: &mut Select, source_select: &Select) -> Vec<String> {
+fn add_having(builder_select: &mut Select, source_select: &Select, ctes: &[Cte]) -> Vec<String> {
     if let Some(having) = &source_select.having {
         builder_select.having = Some(having.clone());
-        query_string_from_select(builder_select)
+        query_string_from_select(builder_select, ctes)
     } else {
         vec![]
     }
 }
 
-fn query_string_from_select(builder_select: &Select) -> Vec<String> {
-    let query = build_query_with_body(builder_select);
+fn query_string_from_select(builder_select: &Select, ctes: &[Cte]) -> Vec<String> {
+    let query = build_query_with_body(builder_select, ctes);
     vec![query.to_string()]
 }
 
-fn build_query_with_body(select: &Select) -> Query {
+fn build_query_with_body(select: &Select, ctes: &[Cte]) -> Query {
     Query {
-        ctes: vec![],
+        ctes: ctes.to_vec(),
         body: SetExpr::Select(Box::new(select.clone())),
         order_by: vec![],
         limit: None,
