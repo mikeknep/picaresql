@@ -105,12 +105,12 @@ fn add_from_and_joins(builder_select: &mut Select, source_select: &Box<Select>) 
         let mut builder_from = from.clone();
         builder_from.joins = vec![];
         builder_select.from.push(builder_from.clone());
-        clause_steps.append(&mut take_snapshot(builder_select));
+        clause_steps.append(&mut query_string_from_select(builder_select));
 
         for join in from.joins.iter() {
             builder_from.joins.push(join.clone());
             builder_select.from[index] = builder_from.clone();
-            clause_steps.append(&mut take_snapshot(builder_select));
+            clause_steps.append(&mut query_string_from_select(builder_select));
         }
     }
     clause_steps
@@ -119,7 +119,7 @@ fn add_from_and_joins(builder_select: &mut Select, source_select: &Box<Select>) 
 fn add_selection(builder_select: &mut Select, source_select: &Box<Select>) -> Vec<String> {
     if let Some(selection) = &source_select.selection {
         builder_select.selection = Some(selection.clone());
-        take_snapshot(builder_select)
+        query_string_from_select(builder_select)
     } else {
         vec![]
     }
@@ -128,20 +128,20 @@ fn add_selection(builder_select: &mut Select, source_select: &Box<Select>) -> Ve
 fn add_group_bys(builder_select: &mut Select, source_select: &Box<Select>) -> Vec<String> {
     source_select.group_by.iter().flat_map(|group_by| {
         builder_select.group_by.push(group_by.clone());
-        take_snapshot(builder_select)
+        query_string_from_select(builder_select)
     }).collect()
 }
 
 fn add_having(builder_select: &mut Select, source_select: &Box<Select>) -> Vec<String> {
     if let Some(having) = &source_select.having {
         builder_select.having = Some(having.clone());
-        take_snapshot(builder_select)
+        query_string_from_select(builder_select)
     } else {
         vec![]
     }
 }
 
-fn take_snapshot(builder_select: &Select) -> Vec<String> {
+fn query_string_from_select(builder_select: &Select) -> Vec<String> {
     let query = build_query_with_body(builder_select);
     vec![query.to_string()]
 }
