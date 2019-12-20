@@ -105,12 +105,12 @@ fn add_from_and_joins(builder_select: &mut Select, source_select: &Box<Select>) 
         let mut builder_from = from.clone();
         builder_from.joins = vec![];
         builder_select.from.push(builder_from.clone());
-        clause_steps.append(&mut query_string_from_select(builder_select));
+        clause_steps.extend(query_string_from_select(builder_select));
 
         for join in from.joins.iter() {
             builder_from.joins.push(join.clone());
             builder_select.from[index] = builder_from.clone();
-            clause_steps.append(&mut query_string_from_select(builder_select));
+            clause_steps.extend(query_string_from_select(builder_select));
         }
     }
     clause_steps
