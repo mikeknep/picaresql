@@ -3,7 +3,7 @@ use std::io;
 use structopt::StructOpt;
 
 extern crate sqlparser;
-use sqlparser::ast::{Statement, Query, SetExpr, Function, ObjectName, Expr, SelectItem, Select};
+use sqlparser::ast::{Statement, Query, SetExpr, Function, ObjectName, Expr, SelectItem, Select, TableWithJoins};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
@@ -102,8 +102,7 @@ fn create_count_star_projection() -> Vec<SelectItem> {
 fn add_from_and_joins(builder_select: &mut Select, source_select: &Box<Select>) -> Vec<String> {
     let mut clause_steps = vec![];
     for (index, from) in source_select.from.iter().enumerate() {
-        let mut builder_from = from.clone();
-        builder_from.joins = vec![];
+        let mut builder_from = TableWithJoins { relation: from.relation.clone(), joins: vec![] };
         builder_select.from.push(builder_from.clone());
         clause_steps.extend(query_string_from_select(builder_select));
 
