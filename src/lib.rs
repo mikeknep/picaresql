@@ -37,12 +37,12 @@ impl Analysis {
         }
     }
 
-    fn add_query_analysis(mut self, query_analysis: QueryAnalysis) -> Analysis {
+    fn add_query_analysis(mut self, query_analysis: QueryAnalysis) -> Self {
         self.query_analyses.push(query_analysis);
         self
     }
 
-    fn add_insert_analysis(mut self, insert_analysis: InsertAnalysis) -> Analysis {
+    fn add_insert_analysis(mut self, insert_analysis: InsertAnalysis) -> Self {
         self.insert_analyses.push(insert_analysis);
         self
     }
