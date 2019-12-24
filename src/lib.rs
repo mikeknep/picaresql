@@ -48,13 +48,13 @@ impl Analysis {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct QueryAnalysis {
     pub query: String,
     pub clause_steps: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct InsertAnalysis {
     pub insert_statement: String,
     pub target_table_initial_count: String,
