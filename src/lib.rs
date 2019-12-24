@@ -37,6 +37,14 @@ impl Analysis {
         }
     }
 
+    fn apply(self, statement: &Statement) -> Self {
+        match statement {
+            Statement::Query(q) => self.add_query_analysis(analyze_query(q)),
+            Statement::Insert { table_name, columns: _, source } => self.add_insert_analysis(analyze_insert(table_name, source, statement)),
+            _ => self
+        }
+    }
+
     fn add_query_analysis(mut self, query_analysis: QueryAnalysis) -> Self {
         self.query_analyses.push(query_analysis);
         self
@@ -69,14 +77,7 @@ pub fn run(config: Config) {
 }
 
 fn analyze(sql: &str) -> Analysis {
-    let ast = get_ast_for_sql(sql);
-    ast.iter().fold(Analysis::new(), |analysis, statement| {
-        match statement {
-            Statement::Query(q) => analysis.add_query_analysis(analyze_query(q)),
-            Statement::Insert { table_name, columns: _, source } => analysis.add_insert_analysis(analyze_insert(table_name, source, statement)),
-            _ => analysis
-        }
-    })
+    get_ast_for_sql(sql).iter().fold(Analysis::new(), Analysis::apply)
 }
 
 fn get_ast_for_sql(sql: &str) -> Vec<Statement> {
