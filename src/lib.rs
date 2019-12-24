@@ -40,7 +40,7 @@ impl Analysis {
     fn apply(self, statement: &Statement) -> Self {
         match statement {
             Statement::Query(q) => self.add_query_analysis(analyze_query(q)),
-            Statement::Insert { table_name, columns: _, source } => self.add_insert_analysis(analyze_insert(table_name, source, statement)),
+            Statement::Insert { table_name, source, .. } => self.add_insert_analysis(analyze_insert(table_name, source, statement)),
             _ => self
         }
     }
@@ -154,7 +154,7 @@ fn create_count_star_projection() -> Vec<SelectItem> {
     vec![SelectItem::UnnamedExpr(Expr::Function(count))]
 }
 
-fn add_from_and_joins(builder_select: &mut Select, source_select: &Box<Select>) -> Vec<String> {
+fn add_from_and_joins(builder_select: &mut Select, source_select: &Select) -> Vec<String> {
     let mut clause_steps = vec![];
     for (index, from) in source_select.from.iter().enumerate() {
         let mut builder_from = TableWithJoins { relation: from.relation.clone(), joins: vec![] };
@@ -170,7 +170,7 @@ fn add_from_and_joins(builder_select: &mut Select, source_select: &Box<Select>) 
     clause_steps
 }
 
-fn add_selection(builder_select: &mut Select, source_select: &Box<Select>) -> Vec<String> {
+fn add_selection(builder_select: &mut Select, source_select: &Select) -> Vec<String> {
     if let Some(selection) = &source_select.selection {
         builder_select.selection = Some(selection.clone());
         query_string_from_select(builder_select)
@@ -179,14 +179,14 @@ fn add_selection(builder_select: &mut Select, source_select: &Box<Select>) -> Ve
     }
 }
 
-fn add_group_bys(builder_select: &mut Select, source_select: &Box<Select>) -> Vec<String> {
+fn add_group_bys(builder_select: &mut Select, source_select: &Select) -> Vec<String> {
     source_select.group_by.iter().flat_map(|group_by| {
         builder_select.group_by.push(group_by.clone());
         query_string_from_select(builder_select)
     }).collect()
 }
 
-fn add_having(builder_select: &mut Select, source_select: &Box<Select>) -> Vec<String> {
+fn add_having(builder_select: &mut Select, source_select: &Select) -> Vec<String> {
     if let Some(having) = &source_select.having {
         builder_select.having = Some(having.clone());
         query_string_from_select(builder_select)
