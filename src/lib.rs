@@ -193,12 +193,12 @@ fn add_from_and_joins(builder_select: &mut Select, source_select: &Select, ctes:
     for (index, from) in source_select.from.iter().enumerate() {
         let mut builder_from = TableWithJoins { relation: from.relation.clone(), joins: vec![] };
         builder_select.from.push(builder_from.clone());
-        clause_steps.extend(query_string_from_select(builder_select, ctes));
+        clause_steps.push(query_string_for(builder_select, ctes));
 
         for join in from.joins.iter() {
             builder_from.joins.push(join.clone());
             builder_select.from[index] = builder_from.clone();
-            clause_steps.extend(query_string_from_select(builder_select, ctes));
+            clause_steps.push(query_string_for(builder_select, ctes));
         }
     }
     clause_steps
@@ -207,34 +207,33 @@ fn add_from_and_joins(builder_select: &mut Select, source_select: &Select, ctes:
 fn add_selection(builder_select: &mut Select, source_select: &Select, ctes: &[Cte]) -> Vec<String> {
     if let Some(selection) = &source_select.selection {
         builder_select.selection = Some(selection.clone());
-        query_string_from_select(builder_select, ctes)
+        vec![query_string_for(builder_select, ctes)]
     } else {
         vec![]
     }
 }
 
 fn add_group_bys(builder_select: &mut Select, source_select: &Select, ctes: &[Cte]) -> Vec<String> {
-    source_select.group_by.iter().flat_map(|group_by| {
+    source_select.group_by.iter().map(|group_by| {
         builder_select.group_by.push(group_by.clone());
-        query_string_from_select(builder_select, ctes)
+        query_string_for(builder_select, ctes)
     }).collect()
 }
 
 fn add_having(builder_select: &mut Select, source_select: &Select, ctes: &[Cte]) -> Vec<String> {
     if let Some(having) = &source_select.having {
         builder_select.having = Some(having.clone());
-        query_string_from_select(builder_select, ctes)
+        vec![query_string_for(builder_select, ctes)]
     } else {
         vec![]
     }
 }
 
-fn query_string_from_select(builder_select: &Select, ctes: &[Cte]) -> Vec<String> {
-    let query = build_query_with_body(builder_select, ctes);
-    vec![query.to_string()]
+fn query_string_for(select: &Select, ctes: &[Cte]) -> String {
+    query_for(select, ctes).to_string()
 }
 
-fn build_query_with_body(select: &Select, ctes: &[Cte]) -> Query {
+fn query_for(select: &Select, ctes: &[Cte]) -> Query {
     Query {
         ctes: ctes.to_vec(),
         body: SetExpr::Select(Box::new(select.clone())),
