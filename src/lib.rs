@@ -131,7 +131,7 @@ impl ClauseStepsBuilder {
     }
 
     fn apply(mut self, cte: &Cte) -> ClauseStepsBuilder {
-        self.steps.append(&mut clause_steps_for_query(&query_with_ctes(&cte.query, &self.ctes)));
+        self.steps.extend(clause_steps_for_query(&query_with_ctes(&cte.query, &self.ctes)));
         self.ctes.push(cte.clone());
         self
     }
